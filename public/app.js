@@ -143,6 +143,7 @@ function showSelectedCompanyStations(companyId, integratedStationsData) {
                                   .bindPopup(popupContent);
                               // マーカーにクリックイベントリスナーを追加
                               marker.on('click', function() {
+                                  console.log('Station ID:', station.station_id);
                                   // ステーションIDをクリップボードにコピー
                                   navigator.clipboard.writeText(station.station_id).then(() => {
                                       alert("ステーションID " + station.station_id + " をコピーしました。");
