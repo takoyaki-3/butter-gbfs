@@ -128,7 +128,6 @@ function updateDropdown(systems) {
     });
 }
 
-
 // 選択された会社のステーションのみを表示する関数
 function showSelectedCompanyStations(companyId, integratedStationsData) {
     // マーカーをクリア
@@ -142,6 +141,15 @@ function showSelectedCompanyStations(companyId, integratedStationsData) {
                                                  `空きドック数: ${station.num_docks_available}`;
                               var marker = L.marker([station.lat, station.lon], { icon: bikeIcon })
                                   .bindPopup(popupContent);
+                              // マーカーにクリックイベントリスナーを追加
+                              marker.on('click', function() {
+                                  // ステーションIDをクリップボードにコピー
+                                  navigator.clipboard.writeText(station.station_id).then(() => {
+                                      alert("ステーションID " + station.station_id + " をコピーしました。");
+                                  }).catch(err => {
+                                      console.error('コピーに失敗しました: ', err);
+                                  });
+                              });
                               markers.addLayer(marker);
                           });
 
