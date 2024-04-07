@@ -21,18 +21,30 @@ var bikeIcon = L.icon({
     popupAnchor: [0, -38] 
 });
 
+// グローバル変数としてエンドポイントのマッピングを持ちます
+var endpoints = {
+    default: {
+        station_info: 'https://api-public.odpt.org/api/v4/gbfs/hellocycling/station_information.json',
+        station_status: 'https://api-public.odpt.org/api/v4/gbfs/hellocycling/station_status.json'
+    }
+};
+
 // ステーション情報を取得する関数
-function fetchStationInformation() {
-    // このURLは実際のエンドポイントに置き換えてください。
-    return fetch('https://api-public.odpt.org/api/v4/gbfs/hellocycling/station_information.json')
+function fetchStationInformation(systemId) {
+    systemId = systemId || 'default';
+    // エンドポイントのマッピングからURLを取得
+    const url = endpoints[systemId].station_info;
+    return fetch(url)
         .then(response => response.json())
         .then(data => data.data.stations);
 }
 
 // ステーションステータスを取得する関数
-function fetchStationStatus() {
-    // このURLは実際のエンドポイントに置き換えてください。
-    return fetch('https://api-public.odpt.org/api/v4/gbfs/hellocycling/station_status.json')
+function fetchStationStatus(systemId) {
+    systemId = systemId || 'default';
+    // エンドポイントのマッピングからURLを取得
+    const url = endpoints[systemId].station_status;
+    return fetch(url)
         .then(response => response.json())
         .then(data => data.data.stations);
 }
@@ -66,6 +78,9 @@ function integrateStationData(stationsInfo, stationsStatus) {
 
 // マップ上にステーションを追加する関数
 function addStationsToMap(integratedStationsData) {
+    // 既存のマーカーをクリアする
+    markers.clearLayers();
+    
     integratedStationsData.forEach(station => {
         var popupContent = `<b>${station.name}</b><br>` +
                            `利用可能な自転車: ${station.num_bikes_available}<br>` +
@@ -75,19 +90,44 @@ function addStationsToMap(integratedStationsData) {
         markers.addLayer(marker);
     });
 
+    // 更新されたマーカーのグループをマップに追加する
     mymap.addLayer(markers);
 }
 
 // ドロップダウンメニューを更新する関数
 function updateDropdown(systems) {
     const select = document.getElementById('companySelect');
+    // ドロップダウンを初期化
+    select.innerHTML = '<option value="">会社を選択...</option>';
+    
     systems.forEach(system => {
-        const option = document.createElement('option');
-        option.value = system[0]; // システムIDをvalueとして持つ
-        option.textContent = system[1]; // 会社名をテキストとして持つ
-        select.appendChild(option);
+        const gbfsUrl = system[5]; // GBFSのgbfs.jsonファイルのURLを取得
+        fetch(gbfsUrl)
+            .then(response => response.json())
+            .then(gbfsData => {
+                // GBFSのdataオブジェクトから必要なエンドポイント情報を取り出す
+                const feeds = gbfsData.data.ja.feeds;
+                const stationInfoUrl = feeds.find(feed => feed.name === "station_information").url;
+                const stationStatusUrl = feeds.find(feed => feed.name === "station_status").url;
+
+                // エンドポイントの情報をグローバル変数に格納
+                endpoints[system[1]] = {
+                    station_info: stationInfoUrl,
+                    station_status: stationStatusUrl
+                };
+
+                // ドロップダウンにオプションを追加
+                const option = document.createElement('option');
+                option.value = system[1]; // システムIDをvalueとして持つ
+                option.textContent = system[1]; // 会社名をテキストとして持つ
+                select.appendChild(option);
+
+                console.log('Added system:', system[1], endpoints[system[1]]);
+            })
+            .catch(error => console.error('Error fetching GBFS data:', error));
     });
 }
+
 
 // 選択された会社のステーションのみを表示する関数
 function showSelectedCompanyStations(companyId, integratedStationsData) {
@@ -111,10 +151,18 @@ function showSelectedCompanyStations(companyId, integratedStationsData) {
 
 // ドロップダウンの選択に基づいてマップを更新するイベントハンドラー
 document.getElementById('companySelect').addEventListener('change', function(event) {
-    const companyId = event.target.value;
-    // 選択された会社のステーションを表示
-    if (companyId) {
-        showSelectedCompanyStations(companyId, allStationsData);
+    const systemId = event.target.value;
+    console.log('Selected system:', systemId);
+    if (systemId) {
+        Promise.all([fetchStationInformation(systemId), fetchStationStatus(systemId)])
+            .then(([stationsInfo, stationsStatus]) => {
+                allStationsData = integrateStationData(stationsInfo, stationsStatus);
+                addStationsToMap(allStationsData); // 最初に全ステーションをマップに表示する
+        
+                // const integratedData = integrateStationData(stationsInfo, stationsStatus);
+                // showSelectedCompanyStations(systemId, integratedData);
+            })
+            .catch(error => console.error('Error loading data for the selected system:', error));
     } else {
         // 何も選択されていない場合はすべて表示
         addStationsToMap(allStationsData);
