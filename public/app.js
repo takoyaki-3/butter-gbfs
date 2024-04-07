@@ -76,10 +76,13 @@ function integrateStationData(stationsInfo, stationsStatus) {
     });
 }
 
-// マップ上にステーションを追加する関数
+// マップ上にステーションを追加し、指定されたステーションのポップアップを表示する関数
 function addStationsToMap(integratedStationsData) {
     // 既存のマーカーをクリアする
     markers.clearLayers();
+
+    // URLからクエリパラメータを取得
+    const queryParams = getQueryParams();
     
     integratedStationsData.forEach(station => {
         var popupContent = `<b>${station.name}</b><br>` +
@@ -87,45 +90,78 @@ function addStationsToMap(integratedStationsData) {
                            `空きドック数: ${station.num_docks_available}`;
         var marker = L.marker([station.lat, station.lon], { icon: bikeIcon })
             .bindPopup(popupContent);
+
+        // station_idをマーカーに関連付ける
+        marker.name = station.name;
+        
         markers.addLayer(marker);
+
+        // クエリパラメータに基づいて特定のステーションのマーカーでポップアップを開く
+        console.log('Query params:', queryParams.company, 'station:', queryParams.station);
+        if (queryParams.station === station.name) {
+            console.log('Found station:', station.name);
+            mymap.setView([station.lat, station.lon], 15); // マップの中心を更新
+        }
     });
 
     // 更新されたマーカーのグループをマップに追加する
     mymap.addLayer(markers);
 }
 
+function openPopupFunction() {
+    console.log('Opening popup...');
+    
+    // URLからクエリパラメータを取得
+    const queryParams = getQueryParams();
+
+    // クエリパラメータに基づいて特定のステーションのマーカーでポップアップを開く
+    console.log('Query params:', queryParams.company, 'station:', queryParams.station);
+    for (const marker of markers.getLayers()) {
+        if (queryParams.station === marker.name) {
+            console.log('Found station:', queryParams.station);
+            marker.openPopup();
+        }
+    }
+}
+
 // ドロップダウンメニューを更新する関数
-function updateDropdown(systems) {
+async function updateDropdown(systems) {
     const select = document.getElementById('companySelect');
     // ドロップダウンを初期化
     select.innerHTML = '<option value="">会社を選択...</option>';
     
-    systems.forEach(system => {
+    for(const system of systems) {
         const gbfsUrl = system[5]; // GBFSのgbfs.jsonファイルのURLを取得
-        fetch(gbfsUrl)
-            .then(response => response.json())
-            .then(gbfsData => {
-                // GBFSのdataオブジェクトから必要なエンドポイント情報を取り出す
-                const feeds = gbfsData.data.ja.feeds;
-                const stationInfoUrl = feeds.find(feed => feed.name === "station_information").url;
-                const stationStatusUrl = feeds.find(feed => feed.name === "station_status").url;
+        const response = await fetch(gbfsUrl);
+        const gbfsData = await response.json();
+        // GBFSのdataオブジェクトから必要なエンドポイント情報を取り出す
+        const feeds = gbfsData.data.ja.feeds;
+        const stationInfoUrl = feeds.find(feed => feed.name === "station_information").url;
+        const stationStatusUrl = feeds.find(feed => feed.name === "station_status").url;
 
-                // エンドポイントの情報をグローバル変数に格納
-                endpoints[system[1]] = {
-                    station_info: stationInfoUrl,
-                    station_status: stationStatusUrl
-                };
+        // エンドポイントの情報をグローバル変数に格納
+        endpoints[system[1]] = {
+            station_info: stationInfoUrl,
+            station_status: stationStatusUrl
+        };
 
-                // ドロップダウンにオプションを追加
-                const option = document.createElement('option');
-                option.value = system[1]; // システムIDをvalueとして持つ
-                option.textContent = system[1]; // 会社名をテキストとして持つ
-                select.appendChild(option);
+        // ドロップダウンにオプションを追加
+        const option = document.createElement('option');
+        option.value = system[1]; // システムIDをvalueとして持つ
+        option.textContent = system[1]; // 会社名をテキストとして持つ
+        select.appendChild(option);
 
-                console.log('Added system:', system[1], endpoints[system[1]]);
-            })
-            .catch(error => console.error('Error fetching GBFS data:', error));
+        console.log('Added system:', system[1], endpoints[system[1]]);
+    };
+}
+
+function getQueryParams() {
+    const params = {};
+    window.location.search.substring(1).split("&").forEach(function(part) {
+        var item = part.split("=");
+        params[item[0]] = decodeURIComponent(item[1]);
     });
+    return params;
 }
 
 // 選択された会社のステーションのみを表示する関数
@@ -181,14 +217,26 @@ document.getElementById('companySelect').addEventListener('change', function(eve
 // すべてのデータを取得し、マップにステーションを表示する
 let allStationsData = []; // すべてのステーションデータを保持する変数
 
-Promise.all([fetchStationInformation(), fetchStationStatus()])
-    .then(([stationsInfo, stationsStatus]) => {
-        allStationsData = integrateStationData(stationsInfo, stationsStatus);
-        addStationsToMap(allStationsData); // 最初に全ステーションをマップに表示する
-        return fetchAndFilterBikeSystems('https://raw.githubusercontent.com/MobilityData/gbfs/master/systems.csv');
-    })
-    .then(systems => {
-        console.log(systems);
-        updateDropdown(systems); // ドロップダウンメニューにシステムを追加する
+fetchAndFilterBikeSystems('https://raw.githubusercontent.com/MobilityData/gbfs/master/systems.csv')
+.then(systems => {
+    console.log(systems);
+    updateDropdown(systems)
+    .then(() => {
+        // URLからクエリパラメータを取得
+        const queryParams = getQueryParams();
+        console.log('Query params:', queryParams.company, queryParams.station);
+        console.log('Endpoints:', endpoints);
+        Promise.all([fetchStationInformation(queryParams.company), fetchStationStatus(queryParams.company)])
+        .then(([stationsInfo, stationsStatus]) => {
+            allStationsData = integrateStationData(stationsInfo, stationsStatus);
+            addStationsToMap(allStationsData); // 最初に全ステーションをマップに表示する
+            return fetchAndFilterBikeSystems('https://raw.githubusercontent.com/MobilityData/gbfs/master/systems.csv');
+        })
+        .catch(error => console.error('Error loading data:', error));
     })
     .catch(error => console.error('Error loading data:', error));
+})
+.catch(error => console.error('Error loading data:', error));
+
+// 地図が変更されたときにポップアップを開く
+mymap.on('moveend', openPopupFunction);
