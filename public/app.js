@@ -57,7 +57,7 @@ function fetchAndFilterBikeSystems(url) {
             const lines = text.split('\n');
             const systems = lines.slice(1).map(line => line.split(','));
             // 日本のシステムのみを抽出
-            return systems.filter(system => system[0] === 'JP' && system[1] !== 'kotobike');
+            return systems.filter(system => system[0] === 'JP' );
         });
 }
 
